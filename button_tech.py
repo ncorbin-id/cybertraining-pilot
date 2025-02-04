@@ -6,6 +6,11 @@ import matplotlib.dates as mdates
 import pandas as pd
 from typing import Dict, List, Tuple, Callable
 
+from xgboost import XGBRegressor
+import time 
+from sklearn.linear_model import LinearRegression
+from sklearn.multioutput import MultiOutputRegressor
+
 # Constants for configuration
 WEATHER_VARS = [
     ('Temperature (F)', 'airtemp_degF'),
@@ -396,7 +401,7 @@ def create_station_selector():
 
 selected_model = None  # Global variable for model access
 
-def train_model_button(selected_algo):  # selected_algo is now a parameter
+def train_model_button(selected_algo, X_train_filtered, y_train):  # selected_algo is now a parameter
     """Creates a single 'Train ML Model' button, using the provided selected_algo."""
     global selected_model
     output = widgets.Output()
@@ -431,3 +436,58 @@ def train_model_button(selected_algo):  # selected_algo is now a parameter
     display(output)
 
     return selected_model  # Return the trained model (or None if not trained)
+
+class MultiXGBRegressor(MultiOutputRegressor):
+    def __init__(self, estimator):
+        super().__init__(estimator)
+        self.estimators_ = []
+
+    def fit(self, X, y):
+        start_time = time.time()
+        print("\nStarting Multi-Target XGBoost Training Process...")
+        y_np = y.values if hasattr(y, 'values') else np.array(y)
+        n_outputs = y_np.shape[1]
+        target_names = y.columns if hasattr(y, 'columns') else [f"target_{i}" for i in range(n_outputs)]
+        
+        self.estimators_ = [
+            XGBRegressor(**{k: v for k, v in self.estimator.get_params().items() 
+                          if k != 'verbose'}) 
+            for _ in range(n_outputs)
+        ]
+        
+        for i, (est, target) in enumerate(zip(self.estimators_, target_names)):
+            target_start = time.time()
+            print(f"\nTraining target {i+1}/{n_outputs}: {target}", flush=True)
+            est.fit(X, y_np[:, i], verbose=False)
+            target_time = time.time() - target_start
+            print(f"Target completed in {target_time:.2f} seconds", flush=True)
+
+        total_time = time.time() - start_time
+        print(f"\nTotal training completed in {total_time:.2f} seconds")
+        return self
+    
+
+class MultiLinearRegressor(MultiOutputRegressor):
+    def __init__(self):
+        super().__init__(LinearRegression())
+        self.estimators_ = []
+
+    def fit(self, X, y):
+        start_time = time.time()
+        print("\nStarting Multi-Target Linear Regression Training...")
+        y_np = y.values if hasattr(y, 'values') else np.array(y)
+        n_outputs = y_np.shape[1]
+        target_names = y.columns if hasattr(y, 'columns') else [f"target_{i}" for i in range(n_outputs)]
+        
+        self.estimators_ = [LinearRegression() for _ in range(n_outputs)]
+        
+        for i, (est, target) in enumerate(zip(self.estimators_, target_names)):
+            target_start = time.time()
+            print(f"\nTraining target {i+1}/{n_outputs}: {target}", flush=True)
+            est.fit(X, y_np[:, i])
+            target_time = time.time() - target_start
+            print(f"Target completed in {target_time:.2f} seconds", flush=True)
+
+        total_time = time.time() - start_time
+        print(f"\nTotal training completed in {total_time:.2f} seconds")
+        return self
