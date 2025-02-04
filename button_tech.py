@@ -11,6 +11,12 @@ import time
 from sklearn.linear_model import LinearRegression
 from sklearn.multioutput import MultiOutputRegressor
 
+from typing import Any
+import numpy as np
+import pandas as pd
+from sklearn.base import BaseEstimator
+from sklearn.metrics import root_mean_squared_error, r2_score
+
 # Constants for configuration
 WEATHER_VARS = [
     ('Temperature (F)', 'airtemp_degF'),
@@ -401,41 +407,76 @@ def create_station_selector():
 
 selected_model = None  # Global variable for model access
 
-def train_model_button(selected_algo, X_train_filtered, y_train):  # selected_algo is now a parameter
+def train_model_button(selected_algo, X_train_filtered, y_train):
     """Creates a single 'Train ML Model' button, using the provided selected_algo."""
     global selected_model
+    selected_model = None  # Reset the model at start
     output = widgets.Output()
 
-    train_button = widgets.Button(description='Train Algorithm', layout=widgets.Layout(width='200px', height='200px'))
+    # Create a label to show model status
+    status_label = widgets.Label(value='Click button to train model')
+    
+    train_button = widgets.Button(
+        description='Train Algorithm', 
+        layout=widgets.Layout(width='200px', height='200px')
+    )
 
     def train_model(b):
         global selected_model
         with output:
             clear_output()
-            if selected_algo == "xgboost":
-                print("Running XGBoost model...")
-                base_model = XGBRegressor(
-                    n_estimators=100,
-                    tree_method='hist',
-                    random_state=42
-                )
-                selected_model = MultiXGBRegressor(base_model) # Assuming this is defined
-                selected_model.fit(X_train_filtered, y_train) # Make sure these variables are available
-                print("XGBoost model training completed!")
-            elif selected_algo == "linear_regression":
-                print("Running Linear Regression model...")
-                selected_model = MultiLinearRegressor() # Assuming this is defined
-                selected_model.fit(X_train_filtered, y_train) # Make sure these variables are available
-                print("Linear Regression training completed!")
-            else:
-                print("No algorithm selected. Cannot train.")
+            try:
+                if selected_algo == "xgboost":
+                    print("Running XGBoost model...")
+                    base_model = XGBRegressor(
+                        n_estimators=100,
+                        tree_method='hist',
+                        random_state=42
+                    )
+                    selected_model = MultiXGBRegressor(base_model)
+                    selected_model.fit(X_train_filtered, y_train)
+                    print("XGBoost model training completed!")
+                    print(f"Model object created and trained: {selected_model is not None}")
+                    status_label.value = 'Model trained successfully!'
+                    
+                elif selected_algo == "linear_regression":
+                    print("Running Linear Regression model...")
+                    selected_model = MultiLinearRegressor()
+                    selected_model.fit(X_train_filtered, y_train)
+                    print("Linear Regression training completed!")
+                    print(f"Model object created and trained: {selected_model is not None}")
+                    status_label.value = 'Model trained successfully!'
+                    
+                else:
+                    print("No algorithm selected. Cannot train.")
+                    selected_model = None
+                    status_label.value = 'No algorithm selected'
+                    
+            except Exception as e:
+                print(f"Error during training: {str(e)}")
+                selected_model = None
+                status_label.value = 'Error during training'
+            
+            # Print final status of selected_model
+            print("\nFinal status:")
+            print(f"selected_model object exists: {selected_model is not None}")
+            if selected_model is not None:
+                print(f"Model type: {type(selected_model)}")
+                
+            # Update button state
+            train_button.description = 'Model Trained'
+            train_button.disabled = True
 
     train_button.on_click(train_model)
 
-    display(train_button)
+    display(widgets.VBox([train_button, status_label]))
     display(output)
 
-    return selected_model  # Return the trained model (or None if not trained)
+    def get_model():
+        """Function to get the trained model"""
+        return selected_model
+
+    return get_model  # Return the function instead of the model directly
 
 ## Data
 
@@ -606,3 +647,37 @@ def filter_dataframe(df, prefix_values):
     print(f"Filtered DataFrame: {len(filtered_df.columns)} columns")
     
     return filtered_df
+
+def model_eval_MITC(
+   model: BaseEstimator,
+   X_test: pd.DataFrame,
+   y_test: pd.DataFrame
+) -> None:
+   """
+   Evaluates a trained model using test data and prints performance metrics for MITC.
+   
+   Args:
+       model: Trained scikit-learn model
+       X_test: Test features
+       y_test: True target values
+   """
+   # Make predictions
+   y_pred = model.predict(X_test)
+   
+   # Calculate metrics
+   rmse = root_mean_squared_error(y_test, y_pred, multioutput='raw_values')
+   r2 = r2_score(y_test, y_pred, multioutput='raw_values')
+   
+   # Print results
+   print("Validation Metrics")
+   print(f"\nModel Type: {type(model).__name__}")
+   
+   print("\nRMSE for each target feature:")
+   for target, error in zip(y_test.columns, rmse):
+       print(f" {target}:\t{error:.4f}")
+   
+   print("\nR² Score for each target feature:")
+   for target, score in zip(y_test.columns, r2):
+       print(f" {target}:\t{score:.4f}")
+   
+   print(f"\nAverage R² Score:\t{np.mean(r2):.2f}")
