@@ -437,6 +437,8 @@ def train_model_button(selected_algo, X_train_filtered, y_train):  # selected_al
 
     return selected_model  # Return the trained model (or None if not trained)
 
+## Data
+
 class MultiXGBRegressor(MultiOutputRegressor):
     def __init__(self, estimator):
         super().__init__(estimator)
@@ -491,3 +493,116 @@ class MultiLinearRegressor(MultiOutputRegressor):
         total_time = time.time() - start_time
         print(f"\nTotal training completed in {total_time:.2f} seconds")
         return self
+
+def split_data_temporal(df, final_cutoff='2024-09-28', train_pct=0.6, val_pct=0.2, test_pct=0.2):
+    """
+    Split data into training, validation, and testing sets based on chronological order.
+    The splits are created in this order: Training (earliest dates), Validation (middle dates),
+    Testing (latest dates before cutoff), and True Test (after cutoff)
+    
+    Parameters:
+    -----------
+    df : pandas DataFrame
+        Input DataFrame with a 'date' column
+    final_cutoff : str
+        Date string for the cutoff between validation and true test sets
+    train_pct : float
+        Percentage of pre-cutoff data to use for training (default: 0.6)
+    val_pct : float
+        Percentage of pre-cutoff data to use for validation (default: 0.2)
+    test_pct : float
+        Percentage of pre-cutoff data to use for testing (default: 0.2)
+    """
+    # Input validation
+    if not abs(train_pct + val_pct + test_pct - 1.0) < 1e-10:
+        raise ValueError("Training, validation, and testing percentages must sum to 1.0")
+    
+    # Convert dates to pandas datetime
+    final_cutoff = pd.to_datetime(final_cutoff)
+    
+    # Create mask for true test set
+    true_test_mask = df['date'] > final_cutoff
+    
+    # Get the remaining data (everything up to final_cutoff)
+    remaining_data = df[~true_test_mask].copy()
+    remaining_data = remaining_data.sort_values('date')
+    
+    # Calculate the split points based on percentages
+    n_samples = len(remaining_data)
+    train_end_idx = int(n_samples * train_pct)
+    val_end_idx = int(n_samples * (train_pct + val_pct))  # Changed from test_end_idx
+    
+    # Get the dates at these split points
+    train_cutoff = remaining_data.iloc[train_end_idx]['date']
+    val_cutoff = remaining_data.iloc[val_end_idx]['date']  # Changed from test_cutoff
+    
+    # Create masks for each period in chronological order
+    train_mask = df['date'] <= train_cutoff
+    val_mask = (df['date'] > train_cutoff) & (df['date'] <= val_cutoff)  # Middle period
+    test_mask = (df['date'] > val_cutoff) & (df['date'] <= final_cutoff)  # Latest period before final cutoff
+    
+    # Split the data
+    # Exclude observation_datetime, year_index, and date from features
+    X_cols = [col for col in df.columns 
+              if 'MITC' not in col 
+              and col not in ['observation_datetime', 'year_index', 'date']]
+    y_cols = [col for col in df.columns if 'MITC' in col]
+    
+    # Create the splits in chronological order
+    X_train = df.loc[train_mask, X_cols]
+    y_train = df.loc[train_mask, y_cols]
+    
+    X_val = df.loc[val_mask, X_cols]
+    y_val = df.loc[val_mask, y_cols]
+    
+    X_test = df.loc[test_mask, X_cols]
+    y_test = df.loc[test_mask, y_cols]
+    
+    X_true_test = df.loc[true_test_mask, X_cols]
+    y_true_test = df.loc[true_test_mask, y_cols]
+    
+    # Print summary statistics in chronological order
+    print("Data split summary:")
+    print(f"Training period: {df.loc[train_mask, 'date'].min()} to {df.loc[train_mask, 'date'].max()}")
+    print(f"Training samples: {len(X_train)} ({len(X_train)/len(remaining_data):.1%} of pre-cutoff data)")
+    
+    print(f"\nValidation period: {df.loc[val_mask, 'date'].min()} to {df.loc[val_mask, 'date'].max()}")
+    print(f"Validation samples: {len(X_val)} ({len(X_val)/len(remaining_data):.1%} of pre-cutoff data)")
+    
+    print(f"\nTesting period: {df.loc[test_mask, 'date'].min()} to {df.loc[test_mask, 'date'].max()}")
+    print(f"Testing samples: {len(X_test)} ({len(X_test)/len(remaining_data):.1%} of pre-cutoff data)")
+    
+    print(f"\nTrue test period: {df.loc[true_test_mask, 'date'].min()} to {df.loc[true_test_mask, 'date'].max()}")
+    print(f"True test samples: {len(X_true_test)}")
+    
+    return (X_train, y_train, X_val, y_val, X_test, y_test, X_true_test, y_true_test)
+
+def filter_dataframe(df, prefix_values):
+    """
+    Filter DataFrame to keep only columns with specified prefixes plus day_index and hour_index.
+    
+    Parameters:
+    df (pandas.DataFrame): Input DataFrame
+    prefix_values (list): List of prefix values to match
+    
+    Returns:
+    pandas.DataFrame: Filtered DataFrame with only the specified columns
+    """
+    # Print original column count
+    print(f"Original DataFrame: {len(df.columns)} columns")
+    
+    # Start with day_index and hour_index
+    columns_to_keep = ['day_index', 'hour_index']
+    
+    # Add any column that starts with our prefix values
+    for prefix in prefix_values:
+        matching_columns = [col for col in df.columns if col.startswith(prefix)]
+        columns_to_keep.extend(matching_columns)
+    
+    # Create filtered dataframe
+    filtered_df = df[columns_to_keep]
+    
+    # Print new column count
+    print(f"Filtered DataFrame: {len(filtered_df.columns)} columns")
+    
+    return filtered_df
