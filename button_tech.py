@@ -219,6 +219,9 @@ def display_input_stations_dashboard(weather_data):
 
 def create_correlation_plot_controls():
     """Creates control widgets for correlation plots."""
+    # Add title label with larger size and bold styling
+    title = widgets.HTML(value='<h3 style="font-weight: bold; margin: 0; padding: 0;">Comparison Plot</h3>')
+    
     var_dropdown = widgets.Dropdown(
         options=[
             ('Temperature (F)', 'airtemp_degF'),
@@ -234,12 +237,13 @@ def create_correlation_plot_controls():
     plot_button = widgets.Button(description="Plot")
     output = widgets.Output()
     
-    return var_dropdown, plot_button, output
+    return title, var_dropdown, plot_button, output
+
 
 def display_correlation_plot_dashboard(base_url="https://elearning.unidata.ucar.edu/dataeLearning/Cybertraining/analysis/media/pairplot_"):
     """Creates and displays interactive dashboard for correlation plots."""
     # Create interface controls
-    var_dropdown, plot_button, output = create_correlation_plot_controls()
+    title, var_dropdown, plot_button, output = create_correlation_plot_controls()
     
     def update_image(_):
         selected_var = var_dropdown.value
@@ -254,7 +258,7 @@ def display_correlation_plot_dashboard(base_url="https://elearning.unidata.ucar.
             ))
     
     plot_button.on_click(update_image)
-    display(var_dropdown, plot_button, output)
+    display(title, var_dropdown, plot_button, output)
 
 def create_percentage_widget():
     """Creates widget for specifying training/validation/testing splits."""
