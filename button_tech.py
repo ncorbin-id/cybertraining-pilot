@@ -668,32 +668,25 @@ def model_eval_MITC(
 ) -> None:
     """
     Evaluates a trained model using test data and prints performance metrics for MITC.
-    
-    Args:
-        model: Trained scikit-learn model
-        X_test: Test features
-        y_test: True target values
-        eval_type: String indicating evaluation type ('Testing', 'Validation', or None)
-    
-    Raises:
-        ValueError: If eval_type is not 'Testing', 'Validation', or None
     """
-    # Validate eval_type
-    valid_types = ['Testing', 'Validation', None]
-    if eval_type not in valid_types:
-        raise ValueError(f"eval_type must be one of {valid_types}")
+    if eval_type not in ['Testing', 'Validation', None]:
+        raise ValueError(f"eval_type must be one of ['Testing', 'Validation', None]")
     
-    # Make predictions
+    # Define header first
+    header = f"{eval_type} Metrics" if eval_type else "Metrics"
+
     y_pred = model.predict(X_test)
-    
-    # Calculate metrics
     rmse = root_mean_squared_error(y_test, y_pred, multioutput='raw_values')
     r2 = r2_score(y_test, y_pred, multioutput='raw_values')
     
-    # Print results
-    header = f"{eval_type} Metrics" if eval_type else "Metrics"
+    # Get stations from X_test that are in STATIONS list
+    used_stations = sorted(set(col.split('_')[0] for col in X_test.columns 
+                             if col.split('_')[0] in STATIONS))
+    
     print(header)
     print(f"\nModel Type: {type(model).__name__}")
+    print(f"\nStations used ({len(used_stations)}/{len(STATIONS)}):")
+    print(', '.join(used_stations))
     
     print("\nRMSE for each target feature:")
     for target, error in zip(y_test.columns, rmse):
