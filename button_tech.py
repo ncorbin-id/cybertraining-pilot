@@ -28,12 +28,16 @@ WEATHER_VARS = [
 
 STATIONS = ['BEAR', 'BURN', 'FRYI', 'JEFF', 'NCAT', 'SALI', 'SASS', 'UNCA', 'WINE']
 
-def create_ml_quiz():
+def create_ml_knowledgecheck():
     """
-    Creates an interactive quiz about ML concepts with two buttons and feedback.
+    Creates an interactive knowledge check about ML concepts with two buttons and feedback.
     Returns the display elements for use in a Jupyter notebook.
     """
     output = widgets.Output()
+
+    question = widgets.HTML(
+        "Which type of machine learning analysis is most appropriate for this scenario?"
+    )
     
     # Create buttons
     classification_button = widgets.Button(
@@ -73,12 +77,12 @@ def create_ml_quiz():
     # Create button container
     buttons = widgets.HBox([classification_button, regression_button])
     
-    return buttons, output
+    return question, buttons, output
 
-def display_quiz():
-    """Creates and displays the quiz in the notebook."""
-    buttons, output = create_ml_quiz()
-    display(buttons, output)
+def display_knowledgecheck():
+    """Creates and displays the knowledge check in the notebook."""
+    question, buttons, output = create_ml_knowledgecheck()
+    display(question, buttons, output)
 
 def create_weather_visualization_controls():
     """Creates control widgets for the Mt. Mitchell weather data visualization."""
@@ -411,7 +415,7 @@ def create_station_selector():
 
 selected_model = None  # Global variable for model access
 
-def train_model_button(selected_algo, X_train_filtered, y_train):
+def train_button(selected_algo, X_train_filtered, y_train):
     """Creates a single 'Train ML Model' button, using the provided selected_algo."""
     global selected_model
     selected_model = None  # Reset the model at start
