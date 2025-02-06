@@ -1,19 +1,24 @@
-from IPython.display import display, HTML, clear_output
-import ipywidgets as widgets
+# Data manipulation and analysis
 import numpy as np
+import pandas as pd
+from typing import Any, Dict, List, Tuple, Callable
+
+# Visualization
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-import pandas as pd
-from typing import Dict, List, Tuple, Callable
+from IPython.display import display, HTML, clear_output
+import ipywidgets as widgets
 
-from xgboost import XGBRegressor
-import time 
+# Machine learning
+from sklearn.base import BaseEstimator
 from sklearn.linear_model import LinearRegression
+from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.multioutput import MultiOutputRegressor
+from xgboost import XGBRegressor
 
+# Utilities
+import time
 from typing import Any
-import numpy as np
-import pandas as pd
 from sklearn.base import BaseEstimator
 from sklearn.metrics import root_mean_squared_error, r2_score
 
@@ -516,7 +521,6 @@ class MultiXGBRegressor(MultiOutputRegressor):
         total_time = time.time() - start_time
         print(f"\nTotal training completed in {total_time:.2f} seconds")
         return self
-    
 
 class MultiLinearRegressor(MultiOutputRegressor):
     def __init__(self):
@@ -657,35 +661,84 @@ def filter_dataframe(df, prefix_values):
     return filtered_df
 
 def model_eval_MITC(
-   model: BaseEstimator,
-   X_test: pd.DataFrame,
-   y_test: pd.DataFrame
+    model: BaseEstimator,
+    X_test: pd.DataFrame,
+    y_test: pd.DataFrame,
+    eval_type: str = 'Validation'
 ) -> None:
-   """
-   Evaluates a trained model using test data and prints performance metrics for MITC.
-   
-   Args:
-       model: Trained scikit-learn model
-       X_test: Test features
-       y_test: True target values
-   """
-   # Make predictions
-   y_pred = model.predict(X_test)
-   
-   # Calculate metrics
-   rmse = root_mean_squared_error(y_test, y_pred, multioutput='raw_values')
-   r2 = r2_score(y_test, y_pred, multioutput='raw_values')
-   
-   # Print results
-   print("Validation Metrics")
-   print(f"\nModel Type: {type(model).__name__}")
-   
-   print("\nRMSE for each target feature:")
-   for target, error in zip(y_test.columns, rmse):
-       print(f" {target}:\t{error:.4f}")
-   
-   print("\nR² Score for each target feature:")
-   for target, score in zip(y_test.columns, r2):
-       print(f" {target}:\t{score:.4f}")
-   
-   print(f"\nAverage R² Score:\t{np.mean(r2):.2f}")
+    """
+    Evaluates a trained model using test data and prints performance metrics for MITC.
+    
+    Args:
+        model: Trained scikit-learn model
+        X_test: Test features
+        y_test: True target values
+        eval_type: String indicating evaluation type ('Testing', 'Validation', or None)
+    
+    Raises:
+        ValueError: If eval_type is not 'Testing', 'Validation', or None
+    """
+    # Validate eval_type
+    valid_types = ['Testing', 'Validation', None]
+    if eval_type not in valid_types:
+        raise ValueError(f"eval_type must be one of {valid_types}")
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    
+    # Calculate metrics
+    rmse = root_mean_squared_error(y_test, y_pred, multioutput='raw_values')
+    r2 = r2_score(y_test, y_pred, multioutput='raw_values')
+    
+    # Print results
+    header = f"{eval_type} Metrics" if eval_type else "Metrics"
+    print(header)
+    print(f"\nModel Type: {type(model).__name__}")
+    
+    print("\nRMSE for each target feature:")
+    for target, error in zip(y_test.columns, rmse):
+        print(f" {target}:\t{error:.4f}")
+    
+    print("\nR² Score for each target feature:")
+    for target, score in zip(y_test.columns, r2):
+        print(f" {target}:\t{score:.4f}")
+    
+    print(f"\nAverage R² Score:\t{np.mean(r2):.2f}")
+
+def plot_weather_comparison(df, y_pred, transition_date, vars_config=WEATHER_VARS, title='MITC Weather Variables 2024'):
+    """Plot historical vs predicted weather variables."""
+    fig, axs = plt.subplots(len(vars_config), 1, figsize=(15, 12), sharex=True)
+    fig.subplots_adjust(hspace=0.1)
+
+    pred_dates = pd.date_range(start=transition_date, periods=len(y_pred), freq='h')
+    pred_dates_num = mdates.date2num(pred_dates)
+
+    for i, ((label, var), ax) in enumerate(zip(vars_config, axs)):
+        var_name = f'MITC_{var}'
+        mask = df[var_name].notna()
+        historical_dates = mdates.date2num(np.array(df.loc[mask, 'observation_datetime']))
+        historical_values = df.loc[mask, var_name].values
+        
+        ax.plot(historical_dates, historical_values, color='#77aadd', alpha=1.0, label='Historical')
+        ax.plot(pred_dates_num, y_pred[:, i], color='#ee8866', alpha=0.7, label='Predicted')
+        ax.axvline(x=mdates.date2num(transition_date), color='red', linestyle='-', alpha=0.8,
+                  label='Day MITC went Offline' if i == 0 else "")
+        
+        ax.set_ylabel(label)
+        ax.grid(True, alpha=0.3)
+        if i == 0:
+            ax.legend(loc='upper right')
+
+    for ax in axs:
+        ax.xaxis.set_major_locator(mdates.MonthLocator(bymonthday=-1))
+        ax.xaxis.set_minor_locator(mdates.MonthLocator(bymonthday=15))
+        ax.xaxis.set_major_formatter(plt.NullFormatter())
+        ax.xaxis.set_minor_formatter(mdates.DateFormatter('%b'))
+
+    plt.setp(axs[-1].xaxis.get_minorticklabels(), rotation=0)
+    plt.xlim(mdates.date2num(pd.Timestamp('2024-01-01')), 
+            mdates.date2num(pd.Timestamp('2024-12-31')))
+    plt.suptitle(title, y=1, fontsize=16)
+    plt.tight_layout()
+    
+    return fig, axs
