@@ -1,4 +1,5 @@
 # Machine Learning in the Earth Systems Sciences
+## *Work in progress*
 
 This learning series is designed to guide you through the very basics of supervised machine learning in the Earth Systems Sciences. You will discover how machine learning is used by scientists, the process for supervised machine learning model development, how data plays a crucial role in making good predictions, and how to be an effective and ethical user of machine learning tools. You will also learn that machine learning is not a catch-all solution to every problem! 
 
