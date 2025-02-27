@@ -26,19 +26,6 @@ from sklearn.model_selection import train_test_split
 # Utilities
 import time
 from typing import Any
-from sklearn.base import BaseEstimator
-from sklearn.metrics import root_mean_squared_error, r2_score
-
-# Constants for configuration
-WEATHER_VARS = [
-    ('Temperature (F)', 'airtemp_degF'),
-    ('Average Wind Speed (mph)', 'windspeed_mph'),
-    ('Wind Gust (mph)', 'windgust_mph'),
-    ('Relative Humidity (%)', 'rh_percent'),
-    ('Precipitation (in)', 'precip_in')
-]
-
-STATIONS = ['BEAR', 'BURN', 'FRYI', 'JEFF', 'NCAT', 'SALI', 'SASS', 'UNCA', 'WINE']
 
 def create_ml_knowledgecheck():
     """
@@ -165,31 +152,6 @@ def display_mt_mitchell_weather_dashboard(weather_data):
            plot_button, 
            output)
 
-def create_input_station_controls():
-    """Creates control widgets for input stations data visualization."""
-    var_dropdown = widgets.Dropdown(
-        options=WEATHER_VARS,
-        description='Variable:',
-        disabled=False
-    )
-
-    plot_dropdown = widgets.Dropdown(
-        options=['Histogram', 'Time Series'],
-        description='Plot type:',
-        disabled=False
-    )
-
-    station_dropdown = widgets.Dropdown(
-        options=STATIONS,
-        description='Station:',
-        disabled=False
-    )
-
-    plot_button = widgets.Button(description="Plot")
-    output = widgets.Output()
-    
-    return station_dropdown, var_dropdown, plot_dropdown, plot_button, output
-
 def display_input_stations_dashboard(weather_data):
     """Creates and displays interactive dashboard for input stations weather data."""
     # Create interface controls
@@ -232,49 +194,6 @@ def display_input_stations_dashboard(weather_data):
            plot_dropdown, 
            plot_button, 
            output)
-
-def create_correlation_plot_controls():
-    """Creates control widgets for correlation plots."""
-    # Add title label with larger size and bold styling
-    title = widgets.HTML(value='<h3 style="font-weight: bold; margin: 0; padding: 0;">Comparison Plot</h3>')
-    
-    var_dropdown = widgets.Dropdown(
-        options=[
-            ('Temperature (F)', 'airtemp_degF'),
-            ('Precipitation (in)', 'precip_in'),
-            ('Relative Humidity (%)', 'rh_percent'),
-            ('Wind Gust (mph)', 'windgust_mph'),
-            ('Average Wind Speed (mph)', 'windspeed_mph')
-        ],
-        description='Variable:',
-        disabled=False
-    )
-
-    plot_button = widgets.Button(description="Plot")
-    output = widgets.Output()
-    
-    return title, var_dropdown, plot_button, output
-
-
-def display_correlation_plot_dashboard(base_url="https://elearning.unidata.ucar.edu/dataeLearning/Cybertraining/analysis/media/pairplot_"):
-    """Creates and displays interactive dashboard for correlation plots."""
-    # Create interface controls
-    title, var_dropdown, plot_button, output = create_correlation_plot_controls()
-    
-    def update_image(_):
-        selected_var = var_dropdown.value
-        image_url = f"{base_url}{selected_var}.png"
-        
-        with output:
-            output.clear_output(wait=True)
-            display(HTML(
-                f'<center><i>Click to enlarge</i><br>'
-                f'<a href="{image_url}" target="blank">'
-                f'<img src="{image_url}" width="600px"></a></center>'
-            ))
-    
-    plot_button.on_click(update_image)
-    display(title, var_dropdown, plot_button, output)
 
 def create_percentage_widget():
     """Creates widget for specifying training/validation/testing splits."""
@@ -353,7 +272,6 @@ def algorithm_selection():
         "Multivariate Logistic Regression": "logistic_regression",
         "XGBoost": "xgboost"
     }
-    
     # Use a list to store the selection (mutable)
     selection = [None]
     output = widgets.Output()
@@ -361,7 +279,7 @@ def algorithm_selection():
     buttons = [
         widgets.Button(
             description=name,
-            layout=widgets.Layout(width='200px', height='200px', margin='10px')
+            layout=widgets.Layout(width='300px', height='125px', margin='10px')
         )
         for name in algorithm_options
     ]
@@ -424,7 +342,6 @@ def create_station_selector():
     
     return checkboxes
 
-
 selected_model = None  # Global variable for model access
 
 def train_button(selected_algo, X_train_filtered, y_train):
@@ -445,25 +362,32 @@ def train_button(selected_algo, X_train_filtered, y_train):
         global selected_model
         with output:
             clear_output()
+            # Use warning filter to suppress convergence warnings
+            import warnings
+            from sklearn.exceptions import ConvergenceWarning
+            
+            # Filter out the specific convergence warning
+            warnings.filterwarnings("ignore", category=ConvergenceWarning)
+            
             try:
                 if selected_algo == "xgboost":
                     print("Running XGBoost model...")
-                    base_model = XGBRegressor(
+                    selected_model = XGBClassifier(
                         n_estimators=100,
                         tree_method='hist',
                         random_state=42
                     )
-                    selected_model = MultiXGBRegressor(base_model)
                     selected_model.fit(X_train_filtered, y_train)
                     print("XGBoost model training completed!")
                     print(f"Model object created and trained: {selected_model is not None}")
                     status_label.value = 'Model trained successfully!'
                     
-                elif selected_algo == "linear_regression":
-                    print("Running Linear Regression model...")
-                    selected_model = MultiLinearRegressor()
+                elif selected_algo == "logistic_regression":
+                    print("Running Logistic Regression model...")
+                    # Increase max_iter to help with convergence
+                    selected_model = LogisticRegression(max_iter=1000)
                     selected_model.fit(X_train_filtered, y_train)
-                    print("Linear Regression training completed!")
+                    print("Logistic Regression training completed!")
                     print(f"Model object created and trained: {selected_model is not None}")
                     status_label.value = 'Model trained successfully!'
                     
@@ -500,62 +424,11 @@ def train_button(selected_algo, X_train_filtered, y_train):
 
 ## Data
 
-
-class MultiXGBClassifier(MultiOutputClassifier):
-    def __init__(self, estimator):
-        super().__init__(estimator)
-        self.estimators_ = []
-
-    def fit(self, X, y):
-        start_time = time.time()
-        print("\nStarting Multi-Target XGBoost Classification Process...")
-        y_np = y.values if hasattr(y, 'values') else np.array(y)
-        n_outputs = y_np.shape[1]
-        target_names = y.columns if hasattr(y, 'columns') else [f"target_{i}" for i in range(n_outputs)]
-        
-        self.estimators_ = [
-            XGBClassifier(**{k: v for k, v in self.estimator.get_params().items() 
-                          if k != 'verbose'}) 
-            for _ in range(n_outputs)
-        ]
-        
-        for i, (est, target) in enumerate(zip(self.estimators_, target_names)):
-            target_start = time.time()
-            print(f"\nTraining target {i+1}/{n_outputs}: {target}", flush=True)
-            est.fit(X, y_np[:, i], verbose=False)
-            target_time = time.time() - target_start
-            print(f"Target completed in {target_time:.2f} seconds", flush=True)
-
-        total_time = time.time() - start_time
-        print(f"\nTotal classification training completed in {total_time:.2f} seconds")
-        return self
-
-class MultiLinearClassifier(MultiOutputClassifier):
-    def __init__(self):
-        super().__init__(LogisticRegression())
-        self.estimators_ = []
-
-    def fit(self, X, y):
-        start_time = time.time()
-        print("\nStarting Multi-Target Logistic Regression Training...")
-        y_np = y.values if hasattr(y, 'values') else np.array(y)
-        n_outputs = y_np.shape[1]
-        target_names = y.columns if hasattr(y, 'columns') else [f"target_{i}" for i in range(n_outputs)]
-        
-        self.estimators_ = [LogisticRegression() for _ in range(n_outputs)]
-        
-        for i, (est, target) in enumerate(zip(self.estimators_, target_names)):
-            target_start = time.time()
-            print(f"\nTraining target {i+1}/{n_outputs}: {target}", flush=True)
-            est.fit(X, y_np[:, i])
-            target_time = time.time() - target_start
-            print(f"Target completed in {target_time:.2f} seconds", flush=True)
-
-        total_time = time.time() - start_time
-        print(f"\nTotal training completed in {total_time:.2f} seconds")
-        return self
-
-def train_val_test_split(df, y_col='ptype', train_size=0.7, val_size=0.15, test_size=0.15, 
+def train_val_test_split(df, 
+                         y_col='ptype', 
+                         train_size=0.7, 
+                         val_size=0.15, 
+                         test_size=0.15, 
                          random_state=None):
     """
     Split a pandas DataFrame into features and target sets for training, validation, and testing.
@@ -626,109 +499,3 @@ def train_val_test_split(df, y_col='ptype', train_size=0.7, val_size=0.15, test_
     print(f"Test set: {len(X_test)} samples ({len(X_test)/len(df):.1%})")
     
     return X_train, y_train, X_val, y_val, X_test, y_test
-
-def filter_dataframe(df, prefix_values):
-    """
-    Filter DataFrame to keep only columns with specified prefixes plus day_index and hour_index.
-    
-    Parameters:
-    df (pandas.DataFrame): Input DataFrame
-    prefix_values (list): List of prefix values to match
-    
-    Returns:
-    pandas.DataFrame: Filtered DataFrame with only the specified columns
-    """
-    # Print original column count
-    print(f"Original DataFrame: {len(df.columns)} columns")
-    
-    # Start with day_index and hour_index
-    columns_to_keep = ['day_index', 'hour_index']
-    
-    # Add any column that starts with our prefix values
-    for prefix in prefix_values:
-        matching_columns = [col for col in df.columns if col.startswith(prefix)]
-        columns_to_keep.extend(matching_columns)
-    
-    # Create filtered dataframe
-    filtered_df = df[columns_to_keep]
-    
-    # Print new column count
-    print(f"Filtered DataFrame: {len(filtered_df.columns)} columns")
-    
-    return filtered_df
-
-def model_eval_MITC(
-    model: BaseEstimator,
-    X_test: pd.DataFrame,
-    y_test: pd.DataFrame,
-    eval_type: str = 'Validation'
-) -> None:
-    """
-    Evaluates a trained model using test data and prints performance metrics for MITC.
-    """
-    if eval_type not in ['Testing', 'Validation', None]:
-        raise ValueError(f"eval_type must be one of ['Testing', 'Validation', None]")
-    
-    # Define header first
-    header = f"{eval_type} Metrics" if eval_type else "Metrics"
-
-    y_pred = model.predict(X_test)
-    rmse = root_mean_squared_error(y_test, y_pred, multioutput='raw_values')
-    r2 = r2_score(y_test, y_pred, multioutput='raw_values')
-    
-    # Get stations from X_test that are in STATIONS list
-    used_stations = sorted(set(col.split('_')[0] for col in X_test.columns 
-                             if col.split('_')[0] in STATIONS))
-    
-    print(header)
-    print(f"\nModel Type: {type(model).__name__}")
-    print(f"\nStations used ({len(used_stations)}/{len(STATIONS)}):")
-    print(', '.join(used_stations))
-    
-    print("\nRMSE for each target feature:")
-    for target, error in zip(y_test.columns, rmse):
-        print(f" {target}:\t{error:.4f}")
-    
-    print("\nR² Score for each target feature:")
-    for target, score in zip(y_test.columns, r2):
-        print(f" {target}:\t{score:.4f}")
-    
-    print(f"\nAverage R² Score:\t{np.mean(r2):.2f}")
-
-def plot_weather_comparison(df, y_pred, transition_date, vars_config=WEATHER_VARS, title='MITC Weather Variables 2024'):
-    """Plot historical vs predicted weather variables."""
-    fig, axs = plt.subplots(len(vars_config), 1, figsize=(15, 12), sharex=True)
-    fig.subplots_adjust(hspace=0.1)
-
-    pred_dates = pd.date_range(start=transition_date, periods=len(y_pred), freq='h')
-    pred_dates_num = mdates.date2num(pred_dates)
-
-    for i, ((label, var), ax) in enumerate(zip(vars_config, axs)):
-        var_name = f'MITC_{var}'
-        mask = df[var_name].notna()
-        historical_dates = mdates.date2num(np.array(df.loc[mask, 'observation_datetime']))
-        historical_values = df.loc[mask, var_name].values
-        
-        ax.plot(historical_dates, historical_values, color='#77aadd', alpha=1.0, label='Historical')
-        ax.plot(pred_dates_num, y_pred[:, i], color='#ee8866', alpha=0.7, label='Predicted')
-        ax.axvline(x=mdates.date2num(transition_date), color='red', linestyle='-', alpha=0.8,
-                  label='Day MITC went Offline' if i == 0 else "")
-        
-        ax.set_ylabel(label)
-        ax.grid(True, alpha=0.3)
-        if i == 0:
-            ax.legend(loc='upper right')
-
-    for ax in axs:
-        ax.xaxis.set_major_locator(mdates.MonthLocator(bymonthday=-1))
-        ax.xaxis.set_minor_locator(mdates.MonthLocator(bymonthday=15))
-        ax.xaxis.set_major_formatter(plt.NullFormatter())
-        ax.xaxis.set_minor_formatter(mdates.DateFormatter('%b'))
-
-    plt.setp(axs[-1].xaxis.get_minorticklabels(), rotation=0)
-    plt.xlim(mdates.date2num(pd.Timestamp('2024-01-01')), 
-            mdates.date2num(pd.Timestamp('2024-12-31')))
-    plt.suptitle(title, y=1, fontsize=16)
-    plt.tight_layout()
-    
-    return fig, axs
