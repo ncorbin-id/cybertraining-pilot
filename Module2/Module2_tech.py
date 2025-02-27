@@ -21,6 +21,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import root_mean_squared_error, r2_score
 from sklearn.multioutput import MultiOutputRegressor
 from xgboost import XGBRegressor
+from sklearn.model_selection import train_test_split
 
 # Utilities
 import time
@@ -554,88 +555,77 @@ class MultiLinearClassifier(MultiOutputClassifier):
         print(f"\nTotal training completed in {total_time:.2f} seconds")
         return self
 
-def split_data_temporal(df, final_cutoff='2024-09-28', train_pct=0.6, val_pct=0.2, test_pct=0.2):
+def train_val_test_split(df, y_col='ptype', train_size=0.7, val_size=0.15, test_size=0.15, 
+                         random_state=None):
     """
-    Split data into training, validation, and testing sets based on chronological order.
-    The splits are created in this order: Training (earliest dates), Validation (middle dates),
-    Testing (latest dates before cutoff), and True Test (after cutoff)
+    Split a pandas DataFrame into features and target sets for training, validation, and testing.
     
     Parameters:
     -----------
-    df : pandas DataFrame
-        Input DataFrame with a 'date' column
-    final_cutoff : str
-        Date string for the cutoff between validation and true test sets
-    train_pct : float
-        Percentage of pre-cutoff data to use for training (default: 0.6)
-    val_pct : float
-        Percentage of pre-cutoff data to use for validation (default: 0.2)
-    test_pct : float
-        Percentage of pre-cutoff data to use for testing (default: 0.2)
+    df : pandas.DataFrame
+        The DataFrame to split.
+    y_col : str, default='ptype'
+        Column name to use as the target variable.
+    train_size : float, default=0.7
+        Proportion of the dataset to include in the training split.
+    val_size : float, default=0.15
+        Proportion of the dataset to include in the validation split.
+    test_size : float, default=0.15
+        Proportion of the dataset to include in the test split.
+    random_state : int, RandomState instance or None, default=None
+        Controls the shuffling applied to the data before applying the split.
+        
+    Returns:
+    --------
+    X_train : pandas.DataFrame
+        Features for training.
+    y_train : pandas.Series
+        Target for training.
+    X_val : pandas.DataFrame
+        Features for validation.
+    y_val : pandas.Series
+        Target for validation.
+    X_test : pandas.DataFrame
+        Features for testing.
+    y_test : pandas.Series
+        Target for testing.
     """
-    # Input validation
-    if not abs(train_pct + val_pct + test_pct - 1.0) < 1e-10:
-        raise ValueError("Training, validation, and testing percentages must sum to 1.0")
+    # Verify that the proportions sum to 1
+    if abs(train_size + val_size + test_size - 1.0) > 1e-10:
+        raise ValueError("train_size, val_size, and test_size should sum to 1.0")
     
-    # Convert dates to pandas datetime
-    final_cutoff = pd.to_datetime(final_cutoff)
+    # First, split into training and temp (validation + test)
+    relative_test_size = test_size / (val_size + test_size)
     
-    # Create mask for true test set
-    true_test_mask = df['date'] > final_cutoff
+    df_train, df_temp = train_test_split(
+        df, 
+        train_size=train_size,
+        test_size=val_size + test_size,
+        random_state=random_state
+    )
     
-    # Get the remaining data (everything up to final_cutoff)
-    remaining_data = df[~true_test_mask].copy()
-    remaining_data = remaining_data.sort_values('date')
+    # Then split the temp set into validation and test
+    df_val, df_test = train_test_split(
+        df_temp,
+        test_size=relative_test_size,
+        random_state=random_state
+    )
     
-    # Calculate the split points based on percentages
-    n_samples = len(remaining_data)
-    train_end_idx = int(n_samples * train_pct)
-    val_end_idx = int(n_samples * (train_pct + val_pct))  # Changed from test_end_idx
+    # Split each dataframe into X and y
+    X_train = df_train.drop(columns=[y_col])
+    y_train = df_train[y_col]
     
-    # Get the dates at these split points
-    train_cutoff = remaining_data.iloc[train_end_idx]['date']
-    val_cutoff = remaining_data.iloc[val_end_idx]['date']  # Changed from test_cutoff
+    X_val = df_val.drop(columns=[y_col])
+    y_val = df_val[y_col]
     
-    # Create masks for each period in chronological order
-    train_mask = df['date'] <= train_cutoff
-    val_mask = (df['date'] > train_cutoff) & (df['date'] <= val_cutoff)  # Middle period
-    test_mask = (df['date'] > val_cutoff) & (df['date'] <= final_cutoff)  # Latest period before final cutoff
+    X_test = df_test.drop(columns=[y_col])
+    y_test = df_test[y_col]
     
-    # Split the data
-    # Exclude observation_datetime, year_index, and date from features
-    X_cols = [col for col in df.columns 
-              if 'MITC' not in col 
-              and col not in ['observation_datetime', 'year_index', 'date']]
-    y_cols = [col for col in df.columns if 'MITC' in col]
+    print(f"Train set: {len(X_train)} samples ({len(X_train)/len(df):.1%})")
+    print(f"Validation set: {len(X_val)} samples ({len(X_val)/len(df):.1%})")
+    print(f"Test set: {len(X_test)} samples ({len(X_test)/len(df):.1%})")
     
-    # Create the splits in chronological order
-    X_train = df.loc[train_mask, X_cols]
-    y_train = df.loc[train_mask, y_cols]
-    
-    X_val = df.loc[val_mask, X_cols]
-    y_val = df.loc[val_mask, y_cols]
-    
-    X_test = df.loc[test_mask, X_cols]
-    y_test = df.loc[test_mask, y_cols]
-    
-    X_true_test = df.loc[true_test_mask, X_cols]
-    y_true_test = df.loc[true_test_mask, y_cols]
-    
-    # Print summary statistics in chronological order
-    print("Data split summary:")
-    print(f"Training period: {df.loc[train_mask, 'date'].min()} to {df.loc[train_mask, 'date'].max()}")
-    print(f"Training samples: {len(X_train)} ({len(X_train)/len(remaining_data):.1%} of pre-cutoff data)")
-    
-    print(f"\nValidation period: {df.loc[val_mask, 'date'].min()} to {df.loc[val_mask, 'date'].max()}")
-    print(f"Validation samples: {len(X_val)} ({len(X_val)/len(remaining_data):.1%} of pre-cutoff data)")
-    
-    print(f"\nTesting period: {df.loc[test_mask, 'date'].min()} to {df.loc[test_mask, 'date'].max()}")
-    print(f"Testing samples: {len(X_test)} ({len(X_test)/len(remaining_data):.1%} of pre-cutoff data)")
-    
-    print(f"\nTrue test period: {df.loc[true_test_mask, 'date'].min()} to {df.loc[true_test_mask, 'date'].max()}")
-    print(f"True test samples: {len(X_true_test)}")
-    
-    return (X_train, y_train, X_val, y_val, X_test, y_test, X_true_test, y_true_test)
+    return X_train, y_train, X_val, y_val, X_test, y_test
 
 def filter_dataframe(df, prefix_values):
     """
