@@ -9,6 +9,12 @@ import matplotlib.dates as mdates
 from IPython.display import display, HTML, clear_output
 import ipywidgets as widgets
 
+from sklearn.multioutput import MultiOutputClassifier
+from xgboost import XGBClassifier
+
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.linear_model import LogisticRegression
+
 # Machine learning
 from sklearn.base import BaseEstimator
 from sklearn.linear_model import LinearRegression
@@ -343,7 +349,7 @@ def create_percentage_widget():
 def algorithm_selection():
     """Creates widget for algorithm selection and returns selected value via callback."""
     algorithm_options = {
-        "Multi-Linear Regressor": "linear_regression",
+        "Multivariate Logistic Regression": "logistic_regression",
         "XGBoost": "xgboost"
     }
     
@@ -493,20 +499,21 @@ def train_button(selected_algo, X_train_filtered, y_train):
 
 ## Data
 
-class MultiXGBRegressor(MultiOutputRegressor):
+
+class MultiXGBClassifier(MultiOutputClassifier):
     def __init__(self, estimator):
         super().__init__(estimator)
         self.estimators_ = []
 
     def fit(self, X, y):
         start_time = time.time()
-        print("\nStarting Multi-Target XGBoost Training Process...")
+        print("\nStarting Multi-Target XGBoost Classification Process...")
         y_np = y.values if hasattr(y, 'values') else np.array(y)
         n_outputs = y_np.shape[1]
         target_names = y.columns if hasattr(y, 'columns') else [f"target_{i}" for i in range(n_outputs)]
         
         self.estimators_ = [
-            XGBRegressor(**{k: v for k, v in self.estimator.get_params().items() 
+            XGBClassifier(**{k: v for k, v in self.estimator.get_params().items() 
                           if k != 'verbose'}) 
             for _ in range(n_outputs)
         ]
@@ -519,22 +526,22 @@ class MultiXGBRegressor(MultiOutputRegressor):
             print(f"Target completed in {target_time:.2f} seconds", flush=True)
 
         total_time = time.time() - start_time
-        print(f"\nTotal training completed in {total_time:.2f} seconds")
+        print(f"\nTotal classification training completed in {total_time:.2f} seconds")
         return self
 
-class MultiLinearRegressor(MultiOutputRegressor):
+class MultiLinearClassifier(MultiOutputClassifier):
     def __init__(self):
-        super().__init__(LinearRegression())
+        super().__init__(LogisticRegression())
         self.estimators_ = []
 
     def fit(self, X, y):
         start_time = time.time()
-        print("\nStarting Multi-Target Linear Regression Training...")
+        print("\nStarting Multi-Target Logistic Regression Training...")
         y_np = y.values if hasattr(y, 'values') else np.array(y)
         n_outputs = y_np.shape[1]
         target_names = y.columns if hasattr(y, 'columns') else [f"target_{i}" for i in range(n_outputs)]
         
-        self.estimators_ = [LinearRegression() for _ in range(n_outputs)]
+        self.estimators_ = [LogisticRegression() for _ in range(n_outputs)]
         
         for i, (est, target) in enumerate(zip(self.estimators_, target_names)):
             target_start = time.time()
