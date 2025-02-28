@@ -476,12 +476,10 @@ def create_station_selector():
     return checkboxes
 
 def train_button(selected_algo, X_train_filtered, y_train):
-    """Creates a single 'Train ML Model' button, using the provided selected_algo."""
+    """Creates a training button that handles model training and prediction."""
     global selected_model
-    selected_model = None  # Reset the model at start
+    selected_model = None
     output = widgets.Output()
-
-    # Create a label to show model status
     status_label = widgets.Label(value='Click button to train model')
     
     train_button = widgets.Button(
@@ -493,26 +491,28 @@ def train_button(selected_algo, X_train_filtered, y_train):
         global selected_model
         with output:
             clear_output()
-            # Use warning filter to suppress convergence warnings
             import warnings
             from sklearn.exceptions import ConvergenceWarning
-            
-            # Filter out the specific convergence warning
             warnings.filterwarnings("ignore", category=ConvergenceWarning)
             
-            # Print class names information
+            # Print dataset information
             unique_classes = np.unique(y_train)
-            print(f"Class names in y_train: {unique_classes} (Shape: {y_train.shape})")
+            class_counts = {cls: np.sum(y_train == cls) for cls in unique_classes}
+            class_distribution = {cls: f"{count} ({count/len(y_train)*100:.1f}%)" for cls, count in class_counts.items()}
+            
+            print(f"Dataset information:")
+            print(f"- Features: {X_train_filtered.shape[1]} columns, {X_train_filtered.shape[0]} samples")
+            print(f"- Class names: {unique_classes}")
+            print(f"- Class distribution: {class_distribution}")
+            print(f"- Selected algorithm: {selected_algo}")
             
             try:
                 if selected_algo == "xgboost":
                     print("Running XGBoost model...")
-                    # Convert class labels to 0 and 1 for XGBoost
                     from sklearn.preprocessing import LabelEncoder
                     le = LabelEncoder()
                     y_train_encoded = le.fit_transform(y_train)
                     
-                    # Clear mapping showing which class name maps to which number
                     class_mapping = dict(zip(le.classes_, range(len(le.classes_))))
                     print(f"Label encoding: {class_mapping}")
                     print(f"Class '{le.classes_[0]}' → 0, Class '{le.classes_[1]}' → 1")
@@ -522,23 +522,31 @@ def train_button(selected_algo, X_train_filtered, y_train):
                         tree_method='hist',
                         random_state=42
                     )
-                    # Store the label encoder with the model for later use
                     selected_model.fit(X_train_filtered, y_train_encoded)
                     selected_model.label_encoder_ = le
+                    
+                    if X_train_filtered.shape[1] <= 10:
+                        feature_importances = selected_model.feature_importances_
+                        feature_imp_dict = dict(zip(range(len(feature_importances)), feature_importances))
+                        print(f"Feature importances: {feature_imp_dict}")
+                    
                     print("XGBoost model training completed!")
                     print(f"Model object created and trained: {selected_model is not None}")
                     status_label.value = 'Model trained successfully!'
                     
                 elif selected_algo == "logistic_regression":
                     print("Running Logistic Regression model...")
-                    # Increase max_iter to help with convergence
                     selected_model = LogisticRegression(max_iter=1000)
                     selected_model.fit(X_train_filtered, y_train)
                     
-                    # Show how LogisticRegression has mapped the classes internally
                     classes_mapping = dict(zip(selected_model.classes_, range(len(selected_model.classes_))))
                     print(f"Logistic Regression class mapping: {classes_mapping}")
                     print(f"Class '{selected_model.classes_[0]}' → 0, Class '{selected_model.classes_[1]}' → 1")
+                    
+                    if X_train_filtered.shape[1] <= 10:
+                        coef = selected_model.coef_[0]
+                        feature_importance = dict(zip(range(len(coef)), coef))
+                        print(f"Model coefficients (feature importance): {feature_importance}")
                     
                     print("Logistic Regression training completed!")
                     print(f"Model object created and trained: {selected_model is not None}")
@@ -554,13 +562,11 @@ def train_button(selected_algo, X_train_filtered, y_train):
                 selected_model = None
                 status_label.value = 'Error during training'
             
-            # Print final status of selected_model
             print("\nFinal status:")
             print(f"selected_model object exists: {selected_model is not None}")
             if selected_model is not None:
                 print(f"Model type: {type(selected_model)}")
                 
-            # Reset button state to allow retraining
             train_button.description = 'Train Again'
             train_button.disabled = False
 
@@ -570,10 +576,25 @@ def train_button(selected_algo, X_train_filtered, y_train):
     display(output)
 
     def get_model():
-        """Function to get the trained model"""
+        """Returns the trained model object with standardized prediction interface"""
+        if selected_model is None:
+            return None
+            
+        if isinstance(selected_model, XGBClassifier):
+            # Store the original predict method
+            original_predict = selected_model.predict
+            
+            # Override the predict method to always return class labels
+            def wrapped_predict(X):
+                numeric_predictions = original_predict(X)
+                return selected_model.label_encoder_.inverse_transform(numeric_predictions)
+                
+            # Replace the predict method
+            selected_model.predict = wrapped_predict
+            
         return selected_model
-
-    return get_model  # Return the function instead of the model directly
+            
+    return get_modelß
 
 def train_val_test_split(df, 
                          y_col='ptype', 
