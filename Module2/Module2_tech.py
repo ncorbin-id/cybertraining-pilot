@@ -328,118 +328,6 @@ def display_knowledgecheck():
     question, buttons, output = create_ml_knowledgecheck()
     display(question, buttons, output)
 
-def create_weather_visualization_controls():
-    """Creates control widgets for the Mt. Mitchell weather data visualization."""
-    # Variable dropdown
-    var_dropdown = widgets.Dropdown(
-        options=[
-            ('Temperature (F)', 'MITC_airtemp_degF'),
-            ('Average Wind Speed (mph)', 'MITC_windspeed_mph'),
-            ('Wind Gust (mph)', 'MITC_windgust_mph'),
-            ('Relative Humidity (%)', 'MITC_rh_percent'),
-            ('Precipitation (in)', 'MITC_precip_in')
-        ],
-        description='Variable:',
-        disabled=False
-    )
-
-    # Plot type dropdown
-    plot_dropdown = widgets.Dropdown(
-        options=['Histogram', 'Time Series'],
-        description='Plot type:',
-        disabled=False
-    )
-
-    # Button for plotting
-    plot_button = widgets.Button(description="Plot")
-    
-    # Output widget to render plots
-    output = widgets.Output()
-    
-    return var_dropdown, plot_dropdown, plot_button, output
-
-def display_mt_mitchell_weather_dashboard(weather_data):
-    """Creates and displays interactive dashboard for Mt. Mitchell weather data."""
-    # Create interface controls
-    var_dropdown, plot_dropdown, plot_button, output = create_weather_visualization_controls()
-    
-    def on_plot_button_click(b):
-        with output:
-            clear_output(wait=True)
-            
-            if plot_dropdown.value == 'Histogram':
-                fig, ax = plt.subplots(1, 1, tight_layout=True)
-                ax.hist(weather_data[var_dropdown.value], bins=30, color='skyblue', edgecolor='black')
-                ax.set_title(f"Histogram of {var_dropdown.label} at Mt. Mitchell (MITC)", fontsize=14)
-                ax.set_xlabel(var_dropdown.label)
-                ax.set_ylabel("Number of records")
-                plt.show()
-            
-            elif plot_dropdown.value == 'Time Series':
-                xdates = pd.to_datetime(weather_data['observation_datetime'])
-                fig, ax = plt.subplots(1, 1, tight_layout=True)
-                ax.plot(xdates[::100], weather_data[var_dropdown.value][::100], 
-                       label=var_dropdown.label, color='orange')
-                ax.set_title(f"Time Series of {var_dropdown.label} at Mt. Mitchell (MITC)", fontsize=14)
-                ax.set_xlabel("Date")
-                ax.set_ylabel(var_dropdown.label)
-                ax.xaxis.set_major_locator(mdates.YearLocator())
-                ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
-                plt.show()
-    
-    # Connect button to visualization update function
-    plot_button.on_click(on_plot_button_click)
-    
-    # Display dashboard elements
-    display(widgets.HTML(value="<h3>Mt. Mitchell</h3>"), 
-           var_dropdown, 
-           plot_dropdown, 
-           plot_button, 
-           output)
-
-def display_input_stations_dashboard(weather_data):
-    """Creates and displays interactive dashboard for input stations weather data."""
-    # Create interface controls
-    station_dropdown, var_dropdown, plot_dropdown, plot_button, output = create_input_station_controls()
-    
-    def on_plot_button_click(b):
-        # Construct variable name by combining station and weather variable
-        selected_var = f"{station_dropdown.value}_{var_dropdown.value}"
-        
-        with output:
-            clear_output(wait=True)
-            
-            if plot_dropdown.value == 'Histogram':
-                fig, ax = plt.subplots(1, 1, tight_layout=True)
-                ax.hist(weather_data[selected_var], bins=30, color='skyblue', edgecolor='black')
-                ax.set_title(f"Histogram of {var_dropdown.label} at {station_dropdown.value}", fontsize=14)
-                ax.set_xlabel(var_dropdown.label)
-                ax.set_ylabel("Number of records")
-                plt.show()
-            
-            elif plot_dropdown.value == 'Time Series':
-                xdates = pd.to_datetime(weather_data['observation_datetime'])
-                fig, ax = plt.subplots(1, 1, tight_layout=True)
-                ax.plot(xdates[::100], weather_data[selected_var][::100], 
-                       label=var_dropdown.label, color='orange')
-                ax.set_title(f"Time Series of {var_dropdown.label} at {station_dropdown.value}", fontsize=14)
-                ax.set_xlabel("Date")
-                ax.set_ylabel(var_dropdown.label)
-                ax.xaxis.set_major_locator(mdates.YearLocator())
-                ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y'))
-                plt.show()
-    
-    # Connect button to visualization update function
-    plot_button.on_click(on_plot_button_click)
-    
-    # Display dashboard elements
-    display(widgets.HTML(value="<h3>Input Stations</h3>"), 
-           station_dropdown,
-           var_dropdown, 
-           plot_dropdown, 
-           plot_button, 
-           output)
-
 def create_percentage_widget():
     """Creates widget for specifying training/validation/testing splits."""
     # Create text widgets for percentages
@@ -587,8 +475,6 @@ def create_station_selector():
     
     return checkboxes
 
-selected_model = None  # Global variable for model access
-
 def train_button(selected_algo, X_train_filtered, y_train):
     """Creates a single 'Train ML Model' button, using the provided selected_algo."""
     global selected_model
@@ -614,15 +500,31 @@ def train_button(selected_algo, X_train_filtered, y_train):
             # Filter out the specific convergence warning
             warnings.filterwarnings("ignore", category=ConvergenceWarning)
             
+            # Print class names information
+            unique_classes = np.unique(y_train)
+            print(f"Class names in y_train: {unique_classes} (Shape: {y_train.shape})")
+            
             try:
                 if selected_algo == "xgboost":
                     print("Running XGBoost model...")
+                    # Convert class labels to 0 and 1 for XGBoost
+                    from sklearn.preprocessing import LabelEncoder
+                    le = LabelEncoder()
+                    y_train_encoded = le.fit_transform(y_train)
+                    
+                    # Clear mapping showing which class name maps to which number
+                    class_mapping = dict(zip(le.classes_, range(len(le.classes_))))
+                    print(f"Label encoding: {class_mapping}")
+                    print(f"Class '{le.classes_[0]}' → 0, Class '{le.classes_[1]}' → 1")
+                    
                     selected_model = XGBClassifier(
                         n_estimators=100,
                         tree_method='hist',
                         random_state=42
                     )
-                    selected_model.fit(X_train_filtered, y_train)
+                    # Store the label encoder with the model for later use
+                    selected_model.fit(X_train_filtered, y_train_encoded)
+                    selected_model.label_encoder_ = le
                     print("XGBoost model training completed!")
                     print(f"Model object created and trained: {selected_model is not None}")
                     status_label.value = 'Model trained successfully!'
@@ -632,6 +534,12 @@ def train_button(selected_algo, X_train_filtered, y_train):
                     # Increase max_iter to help with convergence
                     selected_model = LogisticRegression(max_iter=1000)
                     selected_model.fit(X_train_filtered, y_train)
+                    
+                    # Show how LogisticRegression has mapped the classes internally
+                    classes_mapping = dict(zip(selected_model.classes_, range(len(selected_model.classes_))))
+                    print(f"Logistic Regression class mapping: {classes_mapping}")
+                    print(f"Class '{selected_model.classes_[0]}' → 0, Class '{selected_model.classes_[1]}' → 1")
+                    
                     print("Logistic Regression training completed!")
                     print(f"Model object created and trained: {selected_model is not None}")
                     status_label.value = 'Model trained successfully!'
@@ -652,9 +560,9 @@ def train_button(selected_algo, X_train_filtered, y_train):
             if selected_model is not None:
                 print(f"Model type: {type(selected_model)}")
                 
-            # Update button state
-            train_button.description = 'Model Trained'
-            train_button.disabled = True
+            # Reset button state to allow retraining
+            train_button.description = 'Train Again'
+            train_button.disabled = False
 
     train_button.on_click(train_model)
 
@@ -666,8 +574,6 @@ def train_button(selected_algo, X_train_filtered, y_train):
         return selected_model
 
     return get_model  # Return the function instead of the model directly
-
-## Data
 
 def train_val_test_split(df, 
                          y_col='ptype', 
