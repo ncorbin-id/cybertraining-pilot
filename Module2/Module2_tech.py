@@ -151,7 +151,126 @@ def create_column_filter_widget(columns=column_list):
     
     return main_widget, get_selected_columns
 
-
+class HistogramWidget:
+    def __init__(self, df, bins=21, figsize=(7, 4)):
+        """
+        Initialize the histogram widget for plotting precipitation data.
+        
+        Parameters:
+        -----------
+        df : pandas.DataFrame
+            The dataframe containing the data to plot
+        bins : int, optional
+            Number of bins for the histogram (default: 21)
+        figsize : tuple, optional
+            Figure size as (width, height) in inches (default: (7, 4))
+        """
+        self.df = df
+        self.bins = bins
+        self.figsize = figsize
+        
+        # Verify the dataframe has the 'ptype' column
+        if 'ptype' not in df.columns:
+            raise ValueError("Dataframe must contain a 'ptype' column with 'rain' and 'snow' values")
+        
+        # Get all columns except 'ptype' for dropdown
+        self.numeric_columns = [col for col in df.columns if col != 'ptype' and pd.api.types.is_numeric_dtype(df[col])]
+        
+        if len(self.numeric_columns) == 0:
+            raise ValueError("No numeric columns found in dataframe besides 'ptype'")
+        
+        # Initialize widget components
+        self.value_dropdown = widgets.Dropdown(
+            options=self.numeric_columns,
+            value=self.numeric_columns[0],
+            description='Column:',
+            disabled=False
+        )
+        
+        # Separate opacity sliders for rain and snow
+        self.rain_alpha_slider = widgets.FloatSlider(
+            value=0.7,
+            min=0.1,
+            max=1.0,
+            step=0.1,
+            description='Rain opacity:',
+            disabled=False,
+            continuous_update=False,
+            style={'description_width': 'initial'}
+        )
+        
+        self.snow_alpha_slider = widgets.FloatSlider(
+            value=0.7,
+            min=0.1,
+            max=1.0,
+            step=0.1,
+            description='Snow opacity:',
+            disabled=False,
+            continuous_update=False,
+            style={'description_width': 'initial'}
+        )
+        
+        self.plot_button = widgets.Button(
+            description='Update Plot',
+            disabled=False,
+            button_style='', 
+            tooltip='Click to update the plot'
+        )
+        
+        # Set up the layout
+        self.plot_output = widgets.Output()
+        self.plot_button.on_click(self.update_plot)
+        
+        # Display the widget
+        self.widget = widgets.VBox([
+            self.value_dropdown,
+            self.rain_alpha_slider,
+            self.snow_alpha_slider,
+            self.plot_button,
+            self.plot_output
+        ])
+    
+    def update_plot(self, b):
+        """Update the histogram plot based on current widget values."""
+        with self.plot_output:
+            self.plot_output.clear_output(wait=True)
+            fig, ax = plt.subplots(figsize=self.figsize)
+            
+            # Get current values from widgets
+            value_column = self.value_dropdown.value
+            rain_alpha = self.rain_alpha_slider.value
+            snow_alpha = self.snow_alpha_slider.value
+            
+            # Split data by ptype and plot
+            rain_data = self.df[self.df['ptype'] == 'rain'][value_column].dropna()
+            snow_data = self.df[self.df['ptype'] == 'snow'][value_column].dropna()
+            
+            # Determine bin edges based on the full dataset
+            all_data = self.df[value_column].dropna()
+            bin_edges = np.histogram_bin_edges(all_data, bins=self.bins)
+            
+            # Plot snow histogram FIRST (on the bottom) with specific color #ee8866 and its own opacity
+            if not snow_data.empty:
+                ax.hist(snow_data, bins=bin_edges, alpha=snow_alpha, color='#ee8866', label='Snow')
+            
+            # Plot rain histogram SECOND (on top) with specific color #77aadd and its own opacity
+            if not rain_data.empty:
+                ax.hist(rain_data, bins=bin_edges, alpha=rain_alpha, color='#77aadd', label='Rain')
+            
+            # Add labels and legend
+            ax.set_xlabel(value_column)
+            ax.set_ylabel('Frequency')
+            ax.set_title(f'Histogram of {value_column} by Precipitation Type')
+            ax.legend()
+            
+            plt.tight_layout()
+            plt.show()
+    
+    def display(self):
+        """Display the widget."""
+        display(self.widget)
+        # Generate initial plot
+        self.update_plot(None)
 
 def create_ml_knowledgecheck():
     """
