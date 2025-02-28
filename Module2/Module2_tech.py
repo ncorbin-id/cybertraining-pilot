@@ -1,4 +1,5 @@
 # Data manipulation and analysis
+import re
 import numpy as np
 import pandas as pd
 from typing import Any, Dict, List, Tuple, Callable
@@ -23,9 +24,134 @@ from sklearn.multioutput import MultiOutputRegressor
 from xgboost import XGBRegressor
 from sklearn.model_selection import train_test_split
 
-# Utilities
-import time
-from typing import Any
+### Columns ###
+
+column_list = ['TEMP_C_0_m', 'TEMP_C_1000_m', 'TEMP_C_5000_m', 
+               'T_DEWPOINT_C_0_m', 'T_DEWPOINT_C_1000_m', 'T_DEWPOINT_C_5000_m', 
+               'UGRD_m/s_0_m', 'UGRD_m/s_1000_m', 'UGRD_m/s_5000_m', 
+               'VGRD_m/s_0_m', 'VGRD_m/s_1000_m', 'VGRD_m/s_5000_m', 
+               'PRES_Pa_0_m', 'PRES_Pa_1000_m', 'PRES_Pa_5000_m']
+
+def create_column_filter_widget(columns=column_list):
+    """
+    Create a simple grid of checkboxes for column selection.
+    
+    Parameters:
+    columns (list): List of column names to include as selectable options.
+    
+    Returns:
+    tuple: (widget, get_selected_columns) where get_selected_columns is a function
+           that returns the current list of selected column names.
+    """
+    # Group columns by altitude level for section headers
+    columns_by_altitude = {
+        '0_m': [col for col in columns if '_0_m' in col],
+        '1000_m': [col for col in columns if '_1000_m' in col],
+        '5000_m': [col for col in columns if '_5000_m' in col]
+    }
+    
+    # Create widgets for each section
+    sections = []
+    all_checkboxes = {}
+    
+    # Function to create a section of checkboxes
+    def create_section(title, cols):
+        # Create checkboxes for this section
+        section_checkboxes = {
+            col: widgets.Checkbox(
+                value=False,
+                description=col.replace('_0_m', '').replace('_1000_m', '').replace('_5000_m', ''),
+                disabled=False,
+                indent=False
+            ) for col in cols
+        }
+        
+        # Add these checkboxes to the global dictionary
+        all_checkboxes.update(section_checkboxes)
+        
+        # Create a grid for this section
+        grid = widgets.GridBox(
+            children=list(section_checkboxes.values()),
+            layout=widgets.Layout(
+                grid_template_columns='repeat(3, auto)',
+                grid_gap='5px',
+                width='100%',
+                padding='2px'
+            )
+        )
+        
+        # Return section widget
+        return widgets.VBox([
+            widgets.HTML(value=f"<b>{title}</b>"),
+            grid
+        ])
+    
+    # Create each section
+    if columns_by_altitude['0_m']:
+        sections.append(create_section("Surface Level (0m)", columns_by_altitude['0_m']))
+    
+    if columns_by_altitude['1000_m']:
+        sections.append(create_section("1000m Level", columns_by_altitude['1000_m']))
+    
+    if columns_by_altitude['5000_m']:
+        sections.append(create_section("5000m Level", columns_by_altitude['5000_m']))
+    
+    # Create output widget for selection summary
+    output = widgets.Output()
+    
+    # Update function
+    def update_display(change=None):
+        selected_columns = [col for col, checkbox in all_checkboxes.items() if checkbox.value]
+        
+        with output:
+            output.clear_output()
+            if selected_columns:
+                print(f"Selected {len(selected_columns)} of {len(columns)} columns:")
+                
+                # Group selected columns by altitude for display
+                selected_by_altitude = {
+                    "0m": [c for c in selected_columns if "_0_m" in c],
+                    "1000m": [c for c in selected_columns if "_1000_m" in c],
+                    "5000m": [c for c in selected_columns if "_5000_m" in c]
+                }
+                
+                for level, cols in selected_by_altitude.items():
+                    if cols:
+                        print(f"  - {level}: {len(cols)} columns selected")
+            else:
+                print("No columns selected")
+    
+    # Connect event handlers
+    for checkbox in all_checkboxes.values():
+        checkbox.observe(update_display, names='value')
+    
+    # Create dividers between sections
+    dividers = [widgets.HTML(value="<hr style='margin: 10px 0'>") for _ in range(len(sections)-1)]
+    
+    # Interleave sections and dividers
+    container_items = []
+    for i, section in enumerate(sections):
+        container_items.append(section)
+        if i < len(dividers):
+            container_items.append(dividers[i])
+    
+    # Add output at the end
+    container_items.append(widgets.HTML(value="<hr style='margin: 10px 0'>"))
+    container_items.append(output)
+    
+    # Create main container
+    main_widget = widgets.VBox(container_items)
+    
+    # Function to get selected columns
+    def get_selected_columns():
+        return [col for col, checkbox in all_checkboxes.items() if checkbox.value]
+    
+    # Initial display update
+    update_display()
+    
+    return main_widget, get_selected_columns
+
+
 
 def create_ml_knowledgecheck():
     """
