@@ -403,7 +403,7 @@ def algorithm_selection():
     """Creates widget for algorithm selection and returns selected value via callback."""
     algorithm_options = {
         "Multivariate Logistic Regression": "logistic_regression",
-        "XGBoost": "xgboost"
+        "Random Forest Classifier": "random_forest"
     }
     # Use a list to store the selection (mutable)
     selection = [None]
@@ -475,25 +475,36 @@ def create_station_selector():
     
     return checkboxes
 
-def train_button(selected_algo, X_train_filtered, y_train):
-    """Creates a training button that handles model training and prediction."""
-    global selected_model
-    selected_model = None
+def train_button(algorithm, X_train_filtered, y_train):
+    """
+    Creates a training button that uses either Random Forest or Logistic Regression.
+    
+    Parameters:
+    algorithm (str): Either "random_forest" or "logistic_regression"
+    X_train_filtered (array): Feature matrix for training
+    y_train (array): Target values for training
+    """
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.linear_model import LogisticRegression
+    
+    # Define global model variable
+    global trained_model_obj
+    trained_model_obj = None
+    
+    # Create output widgets
     output = widgets.Output()
     status_label = widgets.Label(value='Click button to train model')
     
+    # Create button with generic label and 50% wider
     train_button = widgets.Button(
-        description='Train Algorithm', 
-        layout=widgets.Layout(width='200px', height='200px')
+        description='Train Model', 
+        layout=widgets.Layout(width='300px', height='80px')
     )
 
     def train_model(b):
-        global selected_model
+        global trained_model_obj
         with output:
             clear_output()
-            import warnings
-            from sklearn.exceptions import ConvergenceWarning
-            warnings.filterwarnings("ignore", category=ConvergenceWarning)
             
             # Print dataset information
             unique_classes = np.unique(y_train)
@@ -504,70 +515,42 @@ def train_button(selected_algo, X_train_filtered, y_train):
             print(f"- Features: {X_train_filtered.shape[1]} columns, {X_train_filtered.shape[0]} samples")
             print(f"- Class names: {unique_classes}")
             print(f"- Class distribution: {class_distribution}")
-            print(f"- Selected algorithm: {selected_algo}")
+            print(f"- Selected algorithm: {algorithm.replace('_', ' ').title()}")
             
             try:
-                if selected_algo == "xgboost":
-                    print("Running XGBoost model...")
-                    from sklearn.preprocessing import LabelEncoder
-                    le = LabelEncoder()
-                    y_train_encoded = le.fit_transform(y_train)
+                if algorithm == "random_forest":
+                    print("\nTraining Random Forest model...")
                     
-                    class_mapping = dict(zip(le.classes_, range(len(le.classes_))))
-                    print(f"Label encoding: {class_mapping}")
-                    print(f"Class '{le.classes_[0]}' → 0, Class '{le.classes_[1]}' → 1")
-                    
-                    selected_model = XGBClassifier(
+                    # Create and train Random Forest
+                    trained_model_obj = RandomForestClassifier(
                         n_estimators=100,
-                        tree_method='hist',
                         random_state=42
                     )
-                    selected_model.fit(X_train_filtered, y_train_encoded)
-                    selected_model.label_encoder_ = le
+                    trained_model_obj.fit(X_train_filtered, y_train)
                     
-                    if X_train_filtered.shape[1] <= 10:
-                        feature_importances = selected_model.feature_importances_
-                        feature_imp_dict = dict(zip(range(len(feature_importances)), feature_importances))
-                        print(f"Feature importances: {feature_imp_dict}")
+                elif algorithm == "logistic_regression":
+                    print("\nTraining Logistic Regression model...")
                     
-                    print("XGBoost model training completed!")
-                    print(f"Model object created and trained: {selected_model is not None}")
-                    status_label.value = 'Model trained successfully!'
-                    
-                elif selected_algo == "logistic_regression":
-                    print("Running Logistic Regression model...")
-                    selected_model = LogisticRegression(max_iter=1000)
-                    selected_model.fit(X_train_filtered, y_train)
-                    
-                    classes_mapping = dict(zip(selected_model.classes_, range(len(selected_model.classes_))))
-                    print(f"Logistic Regression class mapping: {classes_mapping}")
-                    print(f"Class '{selected_model.classes_[0]}' → 0, Class '{selected_model.classes_[1]}' → 1")
-                    
-                    if X_train_filtered.shape[1] <= 10:
-                        coef = selected_model.coef_[0]
-                        feature_importance = dict(zip(range(len(coef)), coef))
-                        print(f"Model coefficients (feature importance): {feature_importance}")
-                    
-                    print("Logistic Regression training completed!")
-                    print(f"Model object created and trained: {selected_model is not None}")
-                    status_label.value = 'Model trained successfully!'
-                    
+                    # Create and train Logistic Regression
+                    trained_model_obj = LogisticRegression(
+                        max_iter=1000,
+                        random_state=42
+                    )
+                    trained_model_obj.fit(X_train_filtered, y_train)
+                
                 else:
-                    print("No algorithm selected. Cannot train.")
-                    selected_model = None
-                    status_label.value = 'No algorithm selected'
-                    
+                    raise ValueError(f"Unknown algorithm: {algorithm}")
+                
+                print(f"\n{algorithm.replace('_', ' ').title()} training completed!")
+                print(f"Classes: {trained_model_obj.classes_}")
+                status_label.value = 'Model trained successfully!'
+                
             except Exception as e:
                 print(f"Error during training: {str(e)}")
-                selected_model = None
+                trained_model_obj = None
                 status_label.value = 'Error during training'
-            
-            print("\nFinal status:")
-            print(f"selected_model object exists: {selected_model is not None}")
-            if selected_model is not None:
-                print(f"Model type: {type(selected_model)}")
                 
-            train_button.description = 'Train Again'
+            train_button.description = 'Train Model'
             train_button.disabled = False
 
     train_button.on_click(train_model)
@@ -576,25 +559,10 @@ def train_button(selected_algo, X_train_filtered, y_train):
     display(output)
 
     def get_model():
-        """Returns the trained model object with standardized prediction interface"""
-        if selected_model is None:
-            return None
+        """Returns the trained model"""
+        return trained_model_obj
             
-        if isinstance(selected_model, XGBClassifier):
-            # Store the original predict method
-            original_predict = selected_model.predict
-            
-            # Override the predict method to always return class labels
-            def wrapped_predict(X):
-                numeric_predictions = original_predict(X)
-                return selected_model.label_encoder_.inverse_transform(numeric_predictions)
-                
-            # Replace the predict method
-            selected_model.predict = wrapped_predict
-            
-        return selected_model
-            
-    return get_modelß
+    return get_model
 
 def train_val_test_split(df, 
                          y_col='ptype', 
